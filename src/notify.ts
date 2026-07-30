@@ -67,7 +67,9 @@ const CATEGORY_META: Record<FailCategory, CategoryMeta> = {
   duplicate: {
     icon: '🔁',
     title: '邮箱已被占用',
-    advice: '该邮箱已是沙盒账号或已注册过 Apple Account，换个邮箱（或调大 GEN_START_INDEX）再跑。',
+    advice:
+      '该邮箱已注册过 Apple Account（注意：沙盒账号删除后邮箱不会释放，无法复用），' +
+      '换个没用过的邮箱（或调大 GEN_START_INDEX）再跑。',
   },
   selector: {
     icon: '🧩',

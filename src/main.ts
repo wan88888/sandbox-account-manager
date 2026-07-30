@@ -76,11 +76,11 @@ async function createAccounts(
       }
     } catch (e) {
       const msg = (e as Error).message;
+      // 截图已由 createTester 在关闭弹窗前拍好，这里只记日志。
       if (isDuplicateEmail(msg)) {
         log.warn(`✖ ${at} 邮箱已被占用：${msg}`);
       } else {
         log.error(`✖ ${at} 创建失败：${msg}`);
-        await screenshotOnError(page, cfg.screenshotDir, account.email);
       }
       results.push({ account, status: 'failed', error: msg });
 

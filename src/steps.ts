@@ -392,6 +392,7 @@ async function confirmBatchDelete(page: Page, cfg: AppConfig): Promise<void> {
  * 点「+」-> 在 New Tester 弹窗填 First/Last Name、Email、Password、Confirm Password
  * -> 选 Country or Region -> 点 Create -> 校验弹窗关闭且列表出现该邮箱
  * （未关闭则抓取报错文案抛出；列表找不到则视为假阳性失败）。
+ * 失败截图在关闭弹窗前拍，以保留 Apple 的内联提示。
  */
 export async function createTester(
   page: Page,
@@ -400,7 +401,13 @@ export async function createTester(
 ): Promise<void> {
   const hz = cfg.humanize;
 
-  await openNewTesterDialog(page, cfg);
+  try {
+    await openNewTesterDialog(page, cfg);
+  } catch (e) {
+    await screenshotOnError(page, cfg.screenshotDir, account.email);
+    throw e;
+  }
+
   const dialog = await resolveDialog(page);
 
   try {
@@ -429,6 +436,10 @@ export async function createTester(
 
     await submitAndVerify(page, dialog, account, cfg);
   } catch (e) {
+    // 弹窗一关，Apple 的内联报错就没了，所以截图必须先于 closeDialog。
+    if (!isDuplicateEmail((e as Error).message)) {
+      await screenshotOnError(page, cfg.screenshotDir, account.email);
+    }
     // 无论何种失败都把弹窗关掉，否则下一个账号连「+」都点不到。
     await closeDialog(page, dialog, cfg).catch(() => undefined);
     throw e;
@@ -636,8 +647,17 @@ async function submitAndVerify(
 
   const createBtn = dialog.getByRole('button', { name: S.dialog.createText, exact: true }).first();
   if ((await createBtn.count()) && !(await createBtn.isEnabled().catch(() => true))) {
+    // Apple 校验不通过时（最常见是邮箱已被占用）会内联报错并让 Create 保持禁用。
+    // 必须先读出弹窗里的原始提示，否则会把这类失败误判成选择器问题。
+    const detail = await readDialogError(dialog);
+    if (S.errors.duplicatePattern.test(detail)) {
+      throw new Error(`${DUPLICATE_EMAIL}: ${detail}`);
+    }
     throw new Error(
-      'Create 按钮仍为禁用状态，说明有必填项未被识别/未填成功。请检查各字段的填写与 src/selectors.ts。',
+      'Create 按钮仍为禁用状态，创建未成功。' +
+        (detail
+          ? `页面提示：${detail}`
+          : '页面未给出提示，可能有必填项未被识别/未填成功，请检查各字段的填写与 src/selectors.ts。'),
     );
   }
 
