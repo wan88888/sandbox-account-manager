@@ -1,8 +1,10 @@
 /** 命令行参数解析。用法见 printHelp()。 */
 export interface CliOptions {
   help: boolean;
-  /** 演练：只填表、不点 Create（点 Cancel 关掉弹窗）。 */
+  /** 演练：创建时只填表不点 Create；删除时只勾选不点 Delete Accounts。 */
   dryRun: boolean;
+  /** 批量删除模式：按 accounts.csv 里的邮箱勾选后点 Delete Accounts。 */
+  delete: boolean;
   /** 只处理前 N 个账号。0 表示不限制。 */
   limit: number;
   /** 覆盖 GEN_COUNT（按规则生成的数量）。undefined 表示不覆盖。 */
@@ -34,6 +36,7 @@ export function parseCli(argv = process.argv.slice(2)): CliOptions {
   const opts: CliOptions = {
     help: false,
     dryRun: false,
+    delete: false,
     limit: 0,
     noSkipExisting: false,
     useOpenPage: false,
@@ -48,6 +51,9 @@ export function parseCli(argv = process.argv.slice(2)): CliOptions {
         break;
       case '--dry-run':
         opts.dryRun = true;
+        break;
+      case '--delete':
+        opts.delete = true;
         break;
       case '--limit':
         opts.limit = readInt(argv, i, '--limit');
@@ -81,24 +87,26 @@ export function parseCli(argv = process.argv.slice(2)): CliOptions {
 
 export function printHelp(): void {
   console.log(`
-批量创建 App Store Connect 沙盒测试账号。
+批量创建 / 删除 App Store Connect 沙盒测试账号。
 
 用法:
   npm start -- [选项]
 
 选项:
-  --dry-run              演练：打开 New Tester 并填好表，但点 Cancel 不真的创建
+  --delete               删除模式：勾选明细表里的邮箱，点右上角 Delete Accounts
+  --dry-run              演练：创建时只填表不点 Create；删除时只勾选，点 Cancel 取消勾选
   --limit <N>            本次只处理前 N 个账号
   --count <N>            按规则生成 N 个账号（覆盖 .env 的 GEN_COUNT）
   --start <N>            生成序号从 N 开始（覆盖 .env 的 GEN_START_INDEX）
   --csv <path>           指定账号明细 CSV（覆盖 .env 的 ACCOUNTS_CSV）
-  --no-skip-existing     跳过「读取页面已有账号并去重」的预扫描
+  --no-skip-existing     跳过「读取页面已有账号并去重」的预扫描（仅创建模式）
   --use-open-page        不主动导航，直接使用当前已打开的标签页
   -h, --help             显示本帮助
 
 示例:
-  npm start -- --dry-run --limit 1          # 先拿 1 个账号演练，确认选择器没问题
-  npm start -- --count 10 --start 101       # 生成 sandbox_us_101 ~ 110
+  npm start -- --dry-run --limit 1          # 先拿 1 个账号演练创建
   npm start -- --csv ./data/accounts.csv    # 用明细表创建
+  npm start -- --delete --dry-run           # 演练删除（只勾选，不真删）
+  npm start -- --delete                    # 删除 accounts.csv 里列出的账号
 `);
 }

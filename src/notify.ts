@@ -1,4 +1,4 @@
-/** 运行结束后向飞书（Lark）自定义机器人推送本次批量创建结果。 */
+/** 运行结束后向飞书（Lark）自定义机器人推送本次批量创建 / 删除结果。 */
 import { createHmac } from 'node:crypto';
 import type { AccountResult } from './types.js';
 import { log } from './logger.js';
@@ -21,10 +21,12 @@ export interface RunSummary {
   /** 运行起止时间，用于展示耗时。 */
   startedAt: Date;
   finishedAt: Date;
-  /** dry-run 模式标记（消息里注明，避免误读为真的建了账号）。 */
+  /** dry-run 模式标记（消息里注明，避免误读为真的建了 / 删了账号）。 */
   dryRun: boolean;
-  /** 创建成功的账号落盘 CSV 路径（未启用则为空串）。 */
+  /** 创建成功的账号落盘 CSV 路径（未启用则为空串；删除模式忽略）。 */
   outputCsvPath: string;
+  /** 本次运行模式，默认 create。 */
+  mode?: 'create' | 'delete';
 }
 
 /** 把毫秒时长格式化成 "Xm Ys" / "Ys"。 */
@@ -115,7 +117,8 @@ function renderGroup(cat: FailCategory, items: AccountResult[]): string {
 
 /** 四列统计（成功 / 跳过 / 失败 / 耗时），一眼看清整体。 */
 function statColumns(
-  created: number,
+  successLabel: string,
+  success: number,
   total: number,
   skipped: number,
   failed: number,
@@ -133,7 +136,7 @@ function statColumns(
     flex_mode: 'stretch',
     background_style: 'default',
     columns: [
-      col(`**✅ 已创建**\n<font color='green'>**${created}**</font> / ${total}`),
+      col(`**${successLabel}**\n<font color='green'>**${success}**</font> / ${total}`),
       col(`**↷ 已跳过**\n**${skipped}**`),
       col(
         failed > 0 ? `**❌ 失败**\n<font color='red'>**${failed}**</font>` : `**❌ 失败**\n**0**`,
@@ -153,8 +156,12 @@ export interface FeishuCard {
 /** 把运行摘要拼成飞书交互卡片（大号统计 + 成功账号预览 + 失败按原因分组 + 操作建议）。 */
 export function buildFeishuCard(summary: RunSummary): FeishuCard {
   const { results, logFile, startedAt, finishedAt, dryRun, outputCsvPath } = summary;
+  const mode = summary.mode ?? 'create';
+  const isDelete = mode === 'delete';
 
-  const created = results.filter((r) => r.status === 'created');
+  const succeeded = results.filter((r) =>
+    isDelete ? r.status === 'deleted' : r.status === 'created',
+  );
   const skipped = results.filter((r) => r.status === 'skipped').length;
   const failed = results.filter((r) => r.status === 'failed').length;
   const duration = formatDuration(finishedAt.getTime() - startedAt.getTime());
@@ -166,26 +173,37 @@ export function buildFeishuCard(summary: RunSummary): FeishuCard {
       tag: 'div',
       text: {
         tag: 'lark_md',
-        content: "<font color='grey'>🧪 DRY-RUN 演练：只填表未点 Create，未创建任何账号。</font>",
+        content: isDelete
+          ? "<font color='grey'>🧪 DRY-RUN 演练：只勾选未点 Delete Accounts，未删除任何账号。</font>"
+          : "<font color='grey'>🧪 DRY-RUN 演练：只填表未点 Create，未创建任何账号。</font>",
       },
     });
   }
 
-  elements.push(statColumns(created.length, results.length, skipped, failed, duration));
+  elements.push(
+    statColumns(
+      isDelete ? '🗑️ 已删除' : '✅ 已创建',
+      succeeded.length,
+      results.length,
+      skipped,
+      failed,
+      duration,
+    ),
+  );
 
-  // 成功账号预览（只列邮箱，密码统一在 .env / 落盘 CSV 里，不放到群里）。
-  if (created.length > 0) {
-    const shown = created.slice(0, MAX_ITEMS_PER_GROUP);
-    const more = created.length - shown.length;
+  // 成功账号预览（只列邮箱，密码不放到群里）。
+  if (succeeded.length > 0) {
+    const shown = succeeded.slice(0, MAX_ITEMS_PER_GROUP);
+    const more = succeeded.length - shown.length;
     elements.push({ tag: 'hr' });
     elements.push({
       tag: 'div',
       text: {
         tag: 'lark_md',
         content:
-          `**🆕 本次新建账号**\n` +
+          `**${isDelete ? '🗑️ 本次删除账号' : '🆕 本次新建账号'}**\n` +
           shown.map((r) => `${FW}• ${escapeMd(r.account.email)}`).join('\n') +
-          (more > 0 ? `\n${FW}… 等共 ${created.length} 个` : ''),
+          (more > 0 ? `\n${FW}… 等共 ${succeeded.length} 个` : ''),
       },
     });
   }
@@ -209,17 +227,18 @@ export function buildFeishuCard(summary: RunSummary): FeishuCard {
   const noteContents: unknown[] = [
     { tag: 'plain_text', content: `完成时间：${finishedAt.toLocaleString('zh-CN')}` },
   ];
-  if (created.length > 0 && outputCsvPath) {
+  if (!isDelete && succeeded.length > 0 && outputCsvPath) {
     noteContents.push({ tag: 'plain_text', content: `账号清单：${outputCsvPath}` });
   }
   if (logFile) noteContents.push({ tag: 'plain_text', content: `日志：${logFile}` });
   elements.push({ tag: 'note', elements: noteContents });
 
+  const action = isDelete ? '批量删除' : '批量创建';
   const title = dryRun
-    ? '🧪 沙盒账号批量创建 · 演练完成'
+    ? `🧪 沙盒账号${action} · 演练完成`
     : failed > 0
-      ? '⚠️ 沙盒账号批量创建 · 部分失败'
-      : '✅ 沙盒账号批量创建 · 全部完成';
+      ? `⚠️ 沙盒账号${action} · 部分失败`
+      : `✅ 沙盒账号${action} · 全部完成`;
 
   return {
     config: { wide_screen_mode: true },

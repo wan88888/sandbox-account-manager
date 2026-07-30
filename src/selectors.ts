@@ -8,6 +8,8 @@
 export const selectors = {
   /** 沙盒账号列表页本身。 */
   page: {
+    /** 标题栏里的 Sandbox 标签（People / Sandbox / Xcode Cloud）。点它比重载整页更快地刷新列表数据。 */
+    sandboxTabText: 'Sandbox',
     /** 列表标题（实际渲染为「Test Accounts (23)」）。 */
     headingText: 'Test Accounts',
     /** 用于确认已进入正确页面的候选文案（任一命中即认为已就绪）。 */
@@ -56,6 +58,23 @@ export const selectors = {
     countryPlaceholderText: 'Choose',
     createText: 'Create',
     cancelText: 'Cancel',
+  },
+
+  /**
+   * 批量删除：勾选行复选框 -> 点右上角「Delete Accounts」-> 确认弹窗。
+   * 勾选后工具栏会出现「Selected (N)」与 Cancel / Clear Purchase History / Delete Accounts。
+   */
+  batchDelete: {
+    /** 勾选后工具栏显示的选中数量，用于回读校验。 */
+    selectedPattern: /Selected\s*\((\d+)\)/i,
+    /** 右上角删除按钮文案候选。 */
+    deleteButtonTexts: ['Delete Accounts', 'Delete Account'],
+    /** 勾选后出现的「取消勾选」按钮，dry-run 时点它收尾。 */
+    cancelSelectionText: 'Cancel',
+    /** 二次确认弹窗里的确认按钮文案候选。 */
+    confirmButtonTexts: ['Delete Accounts', 'Delete Account', 'Delete'],
+    /** 确认弹窗取消按钮。 */
+    confirmCancelText: 'Cancel',
   },
 
   /** 失败原因识别。 */

@@ -1,6 +1,6 @@
 import type { Locator, Page } from 'playwright';
 import type { AppConfig } from './config.js';
-import type { SandboxAccount } from './types.js';
+import type { AccountResult, SandboxAccount } from './types.js';
 import { selectors as S } from './selectors.js';
 import { log } from './logger.js';
 import {
@@ -98,34 +98,106 @@ export async function readAccountCount(page: Page): Promise<number | null> {
 /**
  * 步骤 2（可选）：预扫描页面上已存在的账号邮箱，供后续去重跳过。
  *
- * 账号表不是虚拟列表——已加载的行全在 DOM 里，innerText 一次就能全部读到，无需滚动。
- * 只有「Viewing X of Y items」显示还有未加载的行时才去点 Show More，
- * 并在结束时把滚动位置还原，避免页面在用户眼前来回跳。
+ * 「Viewing X of Y items」里的 Y 就是账号总数，正好用来判断有没有扫全：
+ *  - 一次 innerText 就读到 Y 个邮箱（行全在 DOM 里）→ 完全不滚动，页面不会跳；
+ *  - 读到的少于 Y（表格是虚拟列表，未进视野的行没渲染）→ 才滚动补齐，凑够 Y 个立刻停。
+ * 结束时把滚动位置还原到进来时的样子。
  */
 export async function readExistingEmails(page: Page, cfg: AppConfig): Promise<Set<string>> {
   const scrollY = await page.evaluate(() => window.scrollY).catch(() => 0);
 
   await expandAllRows(page, cfg);
+  const total = (await readViewingProgress(page))?.total ?? null;
 
   // 优先只扫账号表格，避开页面右上角登录者信息等无关文本；没有 table 时退回整页。
   const table = page.getByRole('table');
   const scope = (await isVisible(table)) ? table.first() : page.locator('body');
-  const text = await scope.innerText().catch(() => '');
-
   const ignored = new Set(S.ignoredEmails.map((e) => e.toLowerCase()));
   const found = new Set<string>();
-  for (const m of text.matchAll(EMAIL_RE)) {
-    const email = m[0].toLowerCase();
-    if (!ignored.has(email)) found.add(email);
+
+  const collect = async (): Promise<void> => {
+    const text = await scope.innerText().catch(() => '');
+    for (const m of text.matchAll(EMAIL_RE)) {
+      const email = m[0].toLowerCase();
+      if (!ignored.has(email)) found.add(email);
+    }
+  };
+
+  await collect();
+
+  const scanned = (): boolean => total !== null && found.size >= total;
+  if (!scanned()) {
+    log.info(
+      `首屏只读到 ${found.size}${total === null ? '' : `/${total}`} 个邮箱，` +
+        `说明账号表是虚拟列表，滚动补齐剩余行 ...`,
+    );
+    let stableRounds = 0;
+    for (let i = 0; i < 40 && !scanned() && stableRounds < 3; i++) {
+      const before = found.size;
+      await page.mouse.wheel(0, 900);
+      await page.waitForTimeout(200);
+      await collect();
+      stableRounds = found.size === before ? stableRounds + 1 : 0;
+    }
   }
 
   await restoreScroll(page, scrollY);
 
-  log.info(`预扫描到页面上已有 ${found.size} 个沙盒账号邮箱，重复的将自动跳过。`);
+  log.info(
+    `预扫描到页面上已有 ${found.size}${total === null ? '' : `/${total}`} 个沙盒账号邮箱，重复的将自动跳过。`,
+  );
+  if (total !== null && found.size < total) {
+    log.warn(
+      `未能扫全账号列表（${found.size}/${total}），未扫到的账号若与本次邮箱重复，` +
+        `会在 Create 时被 Apple 判为重复而记为失败。`,
+    );
+  }
   if (found.size > 0) {
     log.info(`已有邮箱示例: ${[...found].slice(0, 5).join(', ')}${found.size > 5 ? ' ...' : ''}`);
   }
   return found;
+}
+
+/**
+ * 刷新列表数据后读取账号总数。
+ * 标题里的「Test Accounts (N)」不会随创建/删除实时更新；点顶部 Sandbox 标签
+ * 比重载整页更快，也能触发 ASC 重新拉数据。点不到 Tab 时才退回 page.reload。
+ */
+export async function refreshAndReadCount(page: Page, cfg: AppConfig): Promise<number | null> {
+  const t = cfg.stepTimeoutMs;
+  const before = await readAccountCount(page);
+
+  log.step('点击 Sandbox 标签刷新列表数据 ...');
+  const refreshed = await clickSandboxTab(page, cfg);
+  if (!refreshed) {
+    log.warn('未能点击 Sandbox 标签，退回整页刷新。');
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: t }).catch(() => undefined);
+  }
+
+  await ensureOnSandboxPage(page, t).catch(() => undefined);
+
+  // 标题数字可能稍晚才更新，等它相对刷新前发生变化（或超时后读当前值）。
+  if (before !== null) {
+    const deadline = Date.now() + Math.min(t, 8000);
+    while (Date.now() < deadline) {
+      const now = await readAccountCount(page);
+      if (now !== null && now !== before) return now;
+      await page.waitForTimeout(300);
+    }
+  }
+  return readAccountCount(page);
+}
+
+/** 点击顶部 People / Sandbox / Xcode Cloud 里的 Sandbox 标签。返回是否点到了。 */
+async function clickSandboxTab(page: Page, cfg: AppConfig): Promise<boolean> {
+  const name = S.page.sandboxTabText;
+  const candidates = [
+    page.getByRole('tab', { name, exact: true }),
+    page.getByRole('link', { name, exact: true }),
+    page.getByRole('button', { name, exact: true }),
+    page.getByText(name, { exact: true }),
+  ];
+  return clickFirstVisible(page, candidates, cfg.stepTimeoutMs, cfg.humanize);
 }
 
 /** 读取「Viewing X of Y items」的加载进度。读不到时返回 null。 */
@@ -169,6 +241,158 @@ async function restoreScroll(page: Page, y: number): Promise<void> {
   if (Math.abs(current - y) < 4) return;
   await page.evaluate((top) => window.scrollTo(0, top), y).catch(() => undefined);
   await page.waitForTimeout(200);
+}
+
+/** 按邮箱定位账号表格行（精确匹配邮箱文本，避免前缀误伤）。 */
+function findAccountRow(page: Page, email: string): Locator {
+  return page.getByRole('row').filter({ has: page.getByText(email, { exact: true }) });
+}
+
+/**
+ * 步骤：批量删除沙盒账号。
+ * 展开列表 -> 按邮箱勾选复选框 -> 点右上角 Delete Accounts -> 确认弹窗。
+ * dry-run 时勾选后点 Cancel 取消勾选，不真删。
+ * 页面上找不到的邮箱记为 skipped，不阻断其余账号的删除。
+ */
+export async function deleteTesters(
+  page: Page,
+  accounts: SandboxAccount[],
+  cfg: AppConfig,
+): Promise<AccountResult[]> {
+  const t = cfg.stepTimeoutMs;
+  const hz = cfg.humanize;
+  const results: AccountResult[] = [];
+
+  await expandAllRows(page, cfg);
+
+  const toDelete: SandboxAccount[] = [];
+  for (const account of accounts) {
+    const row = findAccountRow(page, account.email).first();
+    if (!(await row.count())) {
+      log.info(`↷ ${account.email} 页面上未找到，跳过删除。`);
+      results.push({ account, status: 'skipped' });
+      continue;
+    }
+    toDelete.push(account);
+  }
+
+  if (toDelete.length === 0) {
+    log.warn('没有可删除的账号（页面上均未找到）。');
+    return results;
+  }
+
+  log.step(`勾选 ${toDelete.length} 个待删除账号 ...`);
+  for (const account of toDelete) {
+    const row = findAccountRow(page, account.email).first();
+    await row.scrollIntoViewIfNeeded({ timeout: t }).catch(() => undefined);
+    const box = row.getByRole('checkbox').first();
+    if (!(await box.count())) {
+      throw new Error(
+        `行「${account.email}」未找到复选框。请对照页面调整删除逻辑或 src/selectors.ts。`,
+      );
+    }
+    const already = await box.isChecked().catch(() => false);
+    if (!already) await humanClick(page, box, hz, t);
+    await think(hz);
+  }
+
+  // 回读工具栏「Selected (N)」，确认勾选生效。
+  const selected = page.getByText(S.batchDelete.selectedPattern).first();
+  try {
+    await selected.waitFor({ state: 'visible', timeout: t });
+  } catch {
+    throw new Error(
+      `勾选后未出现「Selected (N)」工具栏。请对照页面调整 src/selectors.ts 的 batchDelete.selectedPattern。`,
+    );
+  }
+  const selectedText = await selected.innerText().catch(() => '');
+  const selectedMatch = S.batchDelete.selectedPattern.exec(selectedText);
+  const selectedCount = selectedMatch ? Number.parseInt(selectedMatch[1], 10) : null;
+  if (selectedCount !== null && selectedCount !== toDelete.length) {
+    log.warn(
+      `工具栏显示 Selected (${selectedCount})，与本次勾选 ${toDelete.length} 个不一致，仍继续。`,
+    );
+  } else {
+    log.ok(`已勾选 ${toDelete.length} 个账号（${selectedText.trim()}）。`);
+  }
+
+  if (cfg.dryRun) {
+    log.warn('dry-run：跳过 Delete Accounts，点 Cancel 取消勾选（不删除账号）');
+    await clickByText(page, S.batchDelete.cancelSelectionText, t, hz);
+    await selected.waitFor({ state: 'hidden', timeout: t }).catch(() => undefined);
+    for (const account of toDelete) results.push({ account, status: 'dry-run' });
+    return results;
+  }
+
+  log.step('点击右上角 Delete Accounts ...');
+  const deleteBtn = await resolveDeleteButton(page);
+  if (!(await deleteBtn.isEnabled().catch(() => true))) {
+    throw new Error('Delete Accounts 按钮仍为禁用状态，勾选可能未生效。');
+  }
+  await humanClick(page, deleteBtn, hz, t);
+  await think(hz);
+
+  await confirmBatchDelete(page, cfg);
+
+  // 等列表刷新后，核对目标邮箱是否消失。
+  await page.waitForTimeout(Math.max(cfg.postCreateWaitMs, 1500));
+  for (const account of toDelete) {
+    const stillThere = (await findAccountRow(page, account.email).count()) > 0;
+    if (stillThere) {
+      log.error(`✖ ${account.email} 删除后仍在列表中。`);
+      results.push({ account, status: 'failed', error: '点击删除后账号仍在列表中' });
+    } else {
+      log.ok(`✔ ${account.email} 已删除`);
+      results.push({ account, status: 'deleted' });
+    }
+  }
+  return results;
+}
+
+/** 定位右上角 Delete Accounts 按钮。 */
+async function resolveDeleteButton(page: Page): Promise<Locator> {
+  for (const name of S.batchDelete.deleteButtonTexts) {
+    const btn = page.getByRole('button', { name, exact: true }).first();
+    if (await isVisible(btn)) return btn;
+  }
+  throw new Error(
+    `未找到「Delete Accounts」按钮。请对照页面调整 src/selectors.ts 的 batchDelete.deleteButtonTexts。`,
+  );
+}
+
+/**
+ * 处理删除二次确认弹窗（若有）。
+ * 部分 ASC 版本点完工具栏 Delete Accounts 会再弹一次确认；没有弹窗则直接返回。
+ */
+async function confirmBatchDelete(page: Page, cfg: AppConfig): Promise<void> {
+  const t = cfg.stepTimeoutMs;
+  const hz = cfg.humanize;
+
+  // 给弹窗一点出现时间；没有弹窗也不阻塞。
+  await page.waitForTimeout(800);
+  const dialog = page.getByRole('dialog');
+  if (!(await isVisible(dialog))) {
+    log.info('未出现二次确认弹窗，视为工具栏点击后已直接删除。');
+    return;
+  }
+
+  const scope = dialog.first();
+  for (const name of S.batchDelete.confirmButtonTexts) {
+    const btn = scope.getByRole('button', { name, exact: true }).first();
+    if (await isVisible(btn)) {
+      log.step(`在确认弹窗中点击「${name}」`);
+      await humanClick(page, btn, hz, t);
+      await dialog
+        .first()
+        .waitFor({ state: 'hidden', timeout: t })
+        .catch(() => undefined);
+      return;
+    }
+  }
+
+  throw new Error(
+    '出现了确认弹窗，但未找到确认删除按钮。请对照页面调整 src/selectors.ts 的 batchDelete.confirmButtonTexts。',
+  );
 }
 
 /**

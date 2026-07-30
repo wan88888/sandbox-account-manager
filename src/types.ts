@@ -25,11 +25,13 @@ export interface SandboxAccount {
 export type AccountStatus =
   /** 已成功创建。 */
   | 'created'
-  /** 页面上已存在同邮箱账号，跳过。 */
+  /** 已成功删除。 */
+  | 'deleted'
+  /** 页面上已存在同邮箱账号（创建时），或未找到目标账号（删除时），跳过。 */
   | 'skipped'
-  /** dry-run 演练，只填表不提交。 */
+  /** dry-run 演练：创建时只填表不提交；删除时只勾选不点确认。 */
   | 'dry-run'
-  /** 创建失败。 */
+  /** 创建 / 删除失败。 */
   | 'failed';
 
 export interface AccountResult {

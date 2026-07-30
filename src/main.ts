@@ -10,7 +10,9 @@ import {
   readAccountCount,
   readExistingEmails,
   createTester,
+  deleteTesters,
   recoverPage,
+  refreshAndReadCount,
   isDuplicateEmail,
 } from './steps.js';
 import { appendCreatedAccount } from './output.js';
@@ -91,42 +93,96 @@ async function createAccounts(
     }
   }
 
-  const countAfter = await readAccountCount(page);
   const createdCount = results.filter((r) => r.status === 'created').length;
-  if (countBefore !== null && countAfter !== null) {
-    const delta = countAfter - countBefore;
-    log.info(`创建后页面显示账号总数：${countAfter}（净增 ${delta}）。`);
-    if (delta !== createdCount) {
-      log.warn(
-        `页面净增 ${delta} 个，与本次判定成功的 ${createdCount} 个不一致，建议到页面上人工核对一遍。`,
-      );
+  if (createdCount > 0 && countBefore !== null) {
+    const countAfter = await refreshAndReadCount(page, cfg);
+    if (countAfter !== null) {
+      const delta = countAfter - countBefore;
+      log.info(`刷新后页面显示账号总数：${countAfter}（净增 ${delta}）。`);
+      if (delta !== createdCount) {
+        log.warn(
+          `页面净增 ${delta} 个，与本次判定成功的 ${createdCount} 个不一致，建议到页面上人工核对一遍。`,
+        );
+      }
     }
   }
 
   return results;
 }
 
-function printSummary(results: AccountResult[]): boolean {
+/** 批量删除账号：勾选 -> Delete Accounts -> 确认。 */
+async function deleteAccounts(
+  page: Page,
+  accounts: SandboxAccount[],
+  cfg: AppConfig,
+): Promise<AccountResult[]> {
+  await navigateToSandbox(page, cfg);
+
+  const countBefore = await readAccountCount(page);
+  if (countBefore !== null) log.info(`删除前页面显示账号总数：${countBefore}。`);
+
+  log.info(`===== 开始批量删除 ${accounts.length} 个账号 =====`);
+  let results: AccountResult[];
+  try {
+    results = await deleteTesters(page, accounts, cfg);
+  } catch (e) {
+    const msg = (e as Error).message;
+    log.error(`批量删除失败：${msg}`);
+    await screenshotOnError(page, cfg.screenshotDir, 'batch_delete');
+    // 整批失败时，尚未产出结果的账号一律记为 failed。
+    results = accounts.map((account) => ({ account, status: 'failed' as const, error: msg }));
+  }
+
+  const deletedCount = results.filter((r) => r.status === 'deleted').length;
+  if (deletedCount > 0 && countBefore !== null) {
+    const countAfter = await refreshAndReadCount(page, cfg);
+    if (countAfter !== null) {
+      const delta = countBefore - countAfter;
+      log.info(`刷新后页面显示账号总数：${countAfter}（净减 ${delta}）。`);
+      if (delta !== deletedCount) {
+        log.warn(
+          `页面净减 ${delta} 个，与本次判定成功的 ${deletedCount} 个不一致，建议到页面上人工核对一遍。`,
+        );
+      }
+    }
+  }
+
+  return results;
+}
+
+function printSummary(results: AccountResult[], mode: 'create' | 'delete'): boolean {
   const created = results.filter((r) => r.status === 'created');
+  const deleted = results.filter((r) => r.status === 'deleted');
   const skipped = results.filter((r) => r.status === 'skipped');
   const failed = results.filter((r) => r.status === 'failed');
   const dryRun = results.filter((r) => r.status === 'dry-run');
 
+  const successLabel = mode === 'delete' ? '删除' : '新建';
+  const success = mode === 'delete' ? deleted : created;
+
   log.info('================= 批处理汇总 =================');
   log.info(
-    `共 ${results.length} 个：新建 ${created.length}、跳过 ${skipped.length}、失败 ${failed.length}` +
+    `共 ${results.length} 个：${successLabel} ${success.length}、跳过 ${skipped.length}、失败 ${failed.length}` +
       (dryRun.length ? `、演练 ${dryRun.length}` : ''),
   );
-  for (const r of created) log.ok(`✔ ${r.account.email}`);
-  for (const r of skipped) log.info(`↷ ${r.account.email}（已存在）`);
+  for (const r of success) log.ok(`✔ ${r.account.email}`);
+  for (const r of skipped) {
+    log.info(
+      mode === 'delete' ? `↷ ${r.account.email}（页面上未找到）` : `↷ ${r.account.email}（已存在）`,
+    );
+  }
   for (const r of failed) log.warn(`✖ ${r.account.email}: ${r.error}`);
   log.info('=============================================');
 
   return failed.length > 0;
 }
 
-/** 启动 AdsPower 浏览器并执行批量创建。 */
-async function runAutomation(cfg: AppConfig, accounts: SandboxAccount[]): Promise<AccountResult[]> {
+/** 启动 AdsPower 浏览器并执行创建或删除。 */
+async function runAutomation(
+  cfg: AppConfig,
+  accounts: SandboxAccount[],
+  mode: 'create' | 'delete',
+): Promise<AccountResult[]> {
   // 启动前探活：已在运行则提示直接接管；顺带尽早暴露「客户端未开启」类问题。
   if (await isActive(cfg.adspower)) {
     log.info('检测到该 AdsPower profile 浏览器已在运行，将直接接管。');
@@ -138,7 +194,9 @@ async function runAutomation(cfg: AppConfig, accounts: SandboxAccount[]): Promis
   page.setDefaultTimeout(cfg.stepTimeoutMs);
 
   try {
-    return await createAccounts(page, accounts, cfg);
+    return mode === 'delete'
+      ? await deleteAccounts(page, accounts, cfg)
+      : await createAccounts(page, accounts, cfg);
   } finally {
     await browser.close().catch(() => undefined);
     if (cfg.closeBrowserOnExit) {
@@ -171,7 +229,7 @@ function applyLimits(
   }
   if (cfg.maxAccountsPerRun > 0 && list.length > cfg.maxAccountsPerRun) {
     log.warn(
-      `频率闸门：本次运行最多创建 ${cfg.maxAccountsPerRun} 个账号（MAX_ACCOUNTS_PER_RUN）。`,
+      `频率闸门：本次运行最多处理 ${cfg.maxAccountsPerRun} 个账号（MAX_ACCOUNTS_PER_RUN）。`,
     );
     list = list.slice(0, cfg.maxAccountsPerRun);
   }
@@ -187,6 +245,7 @@ async function run(): Promise<void> {
 
   const cfg = loadConfig();
   applyCliOverrides(cfg, opts);
+  const mode: 'create' | 'delete' = opts.delete ? 'delete' : 'create';
 
   initFileLogging(cfg.logDir);
   const logFile = getLogFile();
@@ -194,13 +253,23 @@ async function run(): Promise<void> {
 
   const accounts = applyLimits(resolveAccounts(cfg), cfg, opts);
 
-  if (cfg.dryRun) log.warn('*** DRY-RUN 模式：只填表，不会点 Create ***');
-  log.info(`本次待创建 ${accounts.length} 个沙盒账号，国家/地区默认 ${cfg.country}。`);
+  if (cfg.dryRun) {
+    log.warn(
+      mode === 'delete'
+        ? '*** DRY-RUN 模式：只勾选账号，不会点 Delete Accounts ***'
+        : '*** DRY-RUN 模式：只填表，不会点 Create ***',
+    );
+  }
+  log.info(
+    mode === 'delete'
+      ? `本次待删除 ${accounts.length} 个沙盒账号。`
+      : `本次待创建 ${accounts.length} 个沙盒账号，国家/地区默认 ${cfg.country}。`,
+  );
 
   const startedAt = new Date();
-  const results = await runAutomation(cfg, accounts);
+  const results = await runAutomation(cfg, accounts, mode);
 
-  const hasFailure = printSummary(results);
+  const hasFailure = printSummary(results, mode);
   if (hasFailure) process.exitCode = 1;
 
   // 运行结果推送飞书（未配置 webhook 时内部静默跳过，失败也不影响退出码）。
@@ -211,6 +280,7 @@ async function run(): Promise<void> {
     finishedAt: new Date(),
     dryRun: cfg.dryRun,
     outputCsvPath: cfg.outputCsvPath,
+    mode,
   });
 }
 

@@ -12,7 +12,11 @@ function account(email: string): SandboxAccount {
   };
 }
 
-function summary(results: AccountResult[], dryRun = false): RunSummary {
+function summary(
+  results: AccountResult[],
+  dryRun = false,
+  mode: 'create' | 'delete' = 'create',
+): RunSummary {
   return {
     results,
     logFile: '/tmp/run.log',
@@ -20,6 +24,7 @@ function summary(results: AccountResult[], dryRun = false): RunSummary {
     finishedAt: new Date('2026-07-30T02:01:30Z'),
     dryRun,
     outputCsvPath: './data/created-accounts.csv',
+    mode,
   };
 }
 
@@ -71,5 +76,22 @@ describe('buildFeishuCard', () => {
     );
     expect(card.header.template).toBe('green');
     expect(cardText(card)).toContain('已跳过');
+  });
+
+  it('删除模式用删除文案，并列出已删除邮箱', () => {
+    const card = buildFeishuCard(
+      summary([{ account: account('a@example.com'), status: 'deleted' }], false, 'delete'),
+    );
+    expect(card.header.title.content).toContain('批量删除');
+    expect(cardText(card)).toContain('已删除');
+    expect(cardText(card)).toContain('a@example.com');
+  });
+
+  it('删除 dry-run 标注未删除', () => {
+    const card = buildFeishuCard(
+      summary([{ account: account('a@example.com'), status: 'dry-run' }], true, 'delete'),
+    );
+    expect(card.header.template).toBe('grey');
+    expect(cardText(card)).toContain('未删除任何账号');
   });
 });

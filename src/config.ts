@@ -135,8 +135,8 @@ export function loadConfig(): AppConfig {
       thinkMaxMs: envInt('THINK_MAX_MS', 2200),
       typeMinMs: envInt('TYPE_MIN_MS', 60),
       typeMaxMs: envInt('TYPE_MAX_MS', 180),
-      betweenAccountsMinMs: envInt('BETWEEN_ACCOUNTS_MIN_MS', 4000),
-      betweenAccountsMaxMs: envInt('BETWEEN_ACCOUNTS_MAX_MS', 12000),
+      betweenAccountsMinMs: envInt('BETWEEN_ACCOUNTS_MIN_MS', 1500),
+      betweenAccountsMaxMs: envInt('BETWEEN_ACCOUNTS_MAX_MS', 3500),
     },
     feishu: {
       webhookUrl: env('FEISHU_WEBHOOK_URL'),
