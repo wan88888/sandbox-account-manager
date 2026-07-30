@@ -1,0 +1,10 @@
+{
+  // 只用于 npm run build：产物只要 src，测试代码不进 dist。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*.ts"]
+}

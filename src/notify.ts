@@ -191,21 +191,24 @@ export function buildFeishuCard(summary: RunSummary): FeishuCard {
     ),
   );
 
-  // 成功账号预览（只列邮箱，密码不放到群里）。
+  // 创建模式直接把账号密码发到内部群；删除模式只列邮箱。
+  // 分段避免单个 lark_md 元素过长，同时确保不因预览上限遗漏凭据。
   if (succeeded.length > 0) {
-    const shown = succeeded.slice(0, MAX_ITEMS_PER_GROUP);
-    const more = succeeded.length - shown.length;
     elements.push({ tag: 'hr' });
-    elements.push({
-      tag: 'div',
-      text: {
-        tag: 'lark_md',
-        content:
-          `**${isDelete ? '🗑️ 本次删除账号' : '🆕 本次新建账号'}**\n` +
-          shown.map((r) => `${FW}• ${escapeMd(r.account.email)}`).join('\n') +
-          (more > 0 ? `\n${FW}… 等共 ${succeeded.length} 个` : ''),
-      },
-    });
+    for (let i = 0; i < succeeded.length; i += MAX_ITEMS_PER_GROUP) {
+      const chunk = succeeded.slice(i, i + MAX_ITEMS_PER_GROUP);
+      const title =
+        i === 0 ? `**${isDelete ? '🗑️ 本次删除账号' : '🆕 本次新建账号及密码'}**\n` : '';
+      const lines = chunk.map((r) =>
+        isDelete
+          ? `${FW}• ${escapeMd(r.account.email)}`
+          : `${FW}• ${escapeMd(r.account.email)}${FW}密码：${escapeMd(r.account.password)}`,
+      );
+      elements.push({
+        tag: 'div',
+        text: { tag: 'lark_md', content: title + lines.join('\n') },
+      });
+    }
   }
 
   // 失败按原因分组 + 操作建议。

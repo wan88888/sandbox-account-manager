@@ -29,6 +29,13 @@ function applyCliOverrides(cfg: AppConfig, opts: CliOptions): void {
   if (opts.csv !== undefined) cfg.accountsCsvPath = opts.csv;
   if (opts.count !== undefined) cfg.generate.count = opts.count;
   if (opts.startIndex !== undefined) cfg.generate.startIndex = opts.startIndex;
+  if (opts.outputWithPasswords) cfg.outputCsvWithPasswords = true;
+}
+
+interface BatchOutcome {
+  results: AccountResult[];
+  /** 页面总数净增/净减与判定成功数不一致。 */
+  countMismatch: boolean;
 }
 
 /** 逐个创建账号，返回每个账号的处理结果。 */
@@ -36,7 +43,7 @@ async function createAccounts(
   page: Page,
   accounts: SandboxAccount[],
   cfg: AppConfig,
-): Promise<AccountResult[]> {
+): Promise<BatchOutcome> {
   const results: AccountResult[] = [];
 
   await navigateToSandbox(page, cfg);
@@ -63,7 +70,9 @@ async function createAccounts(
         results.push({ account, status: 'created' });
         // 已存在集合同步更新，避免同一批次里重复邮箱被创建两次。
         existing.add(account.email.toLowerCase());
-        appendCreatedAccount(cfg.outputCsvPath, account);
+        appendCreatedAccount(cfg.outputCsvPath, account, {
+          includePassword: cfg.outputCsvWithPasswords,
+        });
       }
     } catch (e) {
       const msg = (e as Error).message;
@@ -92,6 +101,7 @@ async function createAccounts(
     }
   }
 
+  let countMismatch = false;
   const createdCount = results.filter((r) => r.status === 'created').length;
   if (createdCount > 0 && countBefore !== null) {
     const countAfter = await refreshAndReadCount(page, cfg);
@@ -99,14 +109,15 @@ async function createAccounts(
       const delta = countAfter - countBefore;
       log.info(`刷新后页面显示账号总数：${countAfter}（净增 ${delta}）。`);
       if (delta !== createdCount) {
-        log.warn(
-          `页面净增 ${delta} 个，与本次判定成功的 ${createdCount} 个不一致，建议到页面上人工核对一遍。`,
+        countMismatch = true;
+        log.error(
+          `页面净增 ${delta} 个，与本次判定成功的 ${createdCount} 个不一致，请到页面人工核对；本次将以非零退出码结束。`,
         );
       }
     }
   }
 
-  return results;
+  return { results, countMismatch };
 }
 
 /** 批量删除账号：勾选 -> Delete Accounts -> 确认。 */
@@ -114,7 +125,7 @@ async function deleteAccounts(
   page: Page,
   accounts: SandboxAccount[],
   cfg: AppConfig,
-): Promise<AccountResult[]> {
+): Promise<BatchOutcome> {
   await navigateToSandbox(page, cfg);
 
   const countBefore = await readAccountCount(page);
@@ -132,6 +143,7 @@ async function deleteAccounts(
     results = accounts.map((account) => ({ account, status: 'failed' as const, error: msg }));
   }
 
+  let countMismatch = false;
   const deletedCount = results.filter((r) => r.status === 'deleted').length;
   if (deletedCount > 0 && countBefore !== null) {
     const countAfter = await refreshAndReadCount(page, cfg);
@@ -139,14 +151,15 @@ async function deleteAccounts(
       const delta = countBefore - countAfter;
       log.info(`刷新后页面显示账号总数：${countAfter}（净减 ${delta}）。`);
       if (delta !== deletedCount) {
-        log.warn(
-          `页面净减 ${delta} 个，与本次判定成功的 ${deletedCount} 个不一致，建议到页面上人工核对一遍。`,
+        countMismatch = true;
+        log.error(
+          `页面净减 ${delta} 个，与本次判定成功的 ${deletedCount} 个不一致，请到页面人工核对；本次将以非零退出码结束。`,
         );
       }
     }
   }
 
-  return results;
+  return { results, countMismatch };
 }
 
 function printSummary(results: AccountResult[], mode: 'create' | 'delete'): boolean {
@@ -181,7 +194,7 @@ async function runAutomation(
   cfg: AppConfig,
   accounts: SandboxAccount[],
   mode: 'create' | 'delete',
-): Promise<AccountResult[]> {
+): Promise<BatchOutcome> {
   // 启动前探活：已在运行则提示直接接管；顺带尽早暴露「客户端未开启」类问题。
   if (await isActive(cfg.adspower)) {
     log.info('检测到该 AdsPower profile 浏览器已在运行，将直接接管。');
@@ -253,10 +266,10 @@ async function run(): Promise<void> {
   );
 
   const startedAt = new Date();
-  const results = await runAutomation(cfg, accounts, mode);
+  const { results, countMismatch } = await runAutomation(cfg, accounts, mode);
 
   const hasFailure = printSummary(results, mode);
-  if (hasFailure) process.exitCode = 1;
+  if (hasFailure || countMismatch) process.exitCode = 1;
 
   // 运行结果推送飞书（未配置 webhook 时内部静默跳过，失败也不影响退出码）。
   await notifyFeishu(cfg.feishu, {

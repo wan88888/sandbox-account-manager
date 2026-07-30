@@ -15,6 +15,8 @@ export interface CliOptions {
   csv?: string;
   /** 不做「已存在则跳过」的预扫描。 */
   noSkipExisting: boolean;
+  /** 创建成功落盘 CSV 时写入明文密码列。 */
+  outputWithPasswords: boolean;
 }
 
 function readInt(argv: string[], i: number, flag: string): number {
@@ -37,6 +39,7 @@ export function parseCli(argv = process.argv.slice(2)): CliOptions {
     delete: false,
     limit: 0,
     noSkipExisting: false,
+    outputWithPasswords: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -71,6 +74,9 @@ export function parseCli(argv = process.argv.slice(2)): CliOptions {
       case '--no-skip-existing':
         opts.noSkipExisting = true;
         break;
+      case '--output-with-passwords':
+        opts.outputWithPasswords = true;
+        break;
       default:
         throw new Error(`未识别的命令行参数: ${arg}（用 --help 查看用法）`);
     }
@@ -94,6 +100,7 @@ export function printHelp(): void {
   --start <N>            生成序号从 N 开始（覆盖 .env 的 GEN_START_INDEX）
   --csv <path>           指定账号明细 CSV（覆盖 .env 的 ACCOUNTS_CSV）
   --no-skip-existing     跳过「读取页面已有账号并去重」的预扫描（仅创建模式）
+  --output-with-passwords  落盘 CSV 写入明文密码列（默认不写，密码用 SANDBOX_PASSWORD）
   -h, --help             显示本帮助
 
 示例:

@@ -1,4 +1,7 @@
 {
+  // 编辑器与 npm run typecheck 用的配置：覆盖 src 与 test，避免测试文件落在项目之外
+  // （那样编辑器会退回默认选项，连 node: 内置模块的类型都找不到）。
+  // 仅构建用的 outDir / rootDir 见 tsconfig.build.json。
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
@@ -11,9 +14,8 @@
     "resolveJsonModule": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "outDir": "dist",
-    "rootDir": "src"
+    "noEmit": true
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "test/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

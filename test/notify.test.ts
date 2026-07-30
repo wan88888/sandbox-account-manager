@@ -40,7 +40,10 @@ describe('buildFeishuCard', () => {
     );
     expect(card.header.template).toBe('green');
     expect(card.header.title.content).toContain('全部完成');
-    expect(cardText(card)).toContain('a@example.com');
+    const text = cardText(card);
+    expect(text).toContain('a@example.com');
+    expect(text).toContain('Sandbox2026');
+    expect(text).toContain('本次新建账号及密码');
   });
 
   it('有失败时用红色卡头，并按原因分组给出建议', () => {
@@ -83,8 +86,10 @@ describe('buildFeishuCard', () => {
       summary([{ account: account('a@example.com'), status: 'deleted' }], false, 'delete'),
     );
     expect(card.header.title.content).toContain('批量删除');
-    expect(cardText(card)).toContain('已删除');
-    expect(cardText(card)).toContain('a@example.com');
+    const text = cardText(card);
+    expect(text).toContain('已删除');
+    expect(text).toContain('a@example.com');
+    expect(text).not.toContain('Sandbox2026');
   });
 
   it('删除 dry-run 标注未删除', () => {

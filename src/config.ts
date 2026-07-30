@@ -75,6 +75,11 @@ export interface AppConfig {
   logDir: string;
   /** 创建成功的账号追加落盘的 CSV 路径，便于交付给测试同学。留空则不落盘。 */
   outputCsvPath: string;
+  /**
+   * 落盘 CSV 是否包含明文 password 列。
+   * 默认 false（密码统一用 SANDBOX_PASSWORD，交给测试时口头/文档说明即可）。
+   */
+  outputCsvWithPasswords: boolean;
   closeBrowserOnExit: boolean;
   /** 运行时开关（由命令行覆盖，见 cli.ts）。 */
   dryRun: boolean;
@@ -119,7 +124,8 @@ export function loadConfig(): AppConfig {
     postCreateWaitMs: envInt('POST_CREATE_WAIT_MS', 2500),
     screenshotDir: env('SCREENSHOT_DIR', './screenshots'),
     logDir: env('LOG_DIR', './logs'),
-    outputCsvPath: env('OUTPUT_CSV', './data/created-accounts.csv'),
+    outputCsvPath: env('OUTPUT_CSV'),
+    outputCsvWithPasswords: envBool('OUTPUT_CSV_WITH_PASSWORDS', false),
     closeBrowserOnExit: envBool('CLOSE_BROWSER_ON_EXIT', false),
     dryRun: false,
     skipExisting: envBool('SKIP_EXISTING', true),

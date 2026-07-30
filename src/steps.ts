@@ -390,7 +390,8 @@ async function confirmBatchDelete(page: Page, cfg: AppConfig): Promise<void> {
 /**
  * 步骤 3：创建单个沙盒账号。
  * 点「+」-> 在 New Tester 弹窗填 First/Last Name、Email、Password、Confirm Password
- * -> 选 Country or Region -> 点 Create -> 校验弹窗关闭（未关闭则抓取报错文案抛出）。
+ * -> 选 Country or Region -> 点 Create -> 校验弹窗关闭且列表出现该邮箱
+ * （未关闭则抓取报错文案抛出；列表找不到则视为假阳性失败）。
  */
 export async function createTester(
   page: Page,
@@ -624,7 +625,7 @@ async function verifyCountry(selected: Locator, country: string): Promise<void> 
   log.ok(`Country or Region 已确认: ${shown}`);
 }
 
-/** 点击 Create 并校验创建结果。 */
+/** 点击 Create 并校验创建结果（弹窗关闭 + 列表出现该邮箱）。 */
 async function submitAndVerify(
   page: Page,
   dialog: Locator,
@@ -643,7 +644,7 @@ async function submitAndVerify(
   log.step(`[${account.email}] 点击 Create`);
   await clickByText(page, S.dialog.createText, t, cfg.humanize, dialog);
 
-  // 成功的标志是弹窗关闭；失败时弹窗保持打开并显示报错。
+  // 第一道：成功时弹窗关闭；失败时弹窗保持打开并显示报错。
   const title = page.getByText(S.dialog.titleText, { exact: true }).first();
   try {
     await title.waitFor({ state: 'hidden', timeout: Math.max(cfg.postCreateWaitMs, 10000) });
@@ -656,7 +657,61 @@ async function submitAndVerify(
   }
 
   await page.waitForTimeout(cfg.postCreateWaitMs);
+
+  // 第二道：列表里必须能看到该邮箱，避免「弹窗关了但账号没入库」的假阳性。
+  await assertAccountInList(page, account.email, cfg);
   log.ok(`[${account.email}] 已创建`);
+}
+
+/**
+ * 确认列表中出现指定邮箱。
+ * 先直接找行；找不到则展开/滚动虚拟列表；仍没有则点 Sandbox 刷新后再找一次。
+ */
+async function assertAccountInList(page: Page, email: string, cfg: AppConfig): Promise<void> {
+  if (await accountRowVisible(page, email)) {
+    log.info(`[${email}] 列表回读：已出现`);
+    return;
+  }
+
+  await expandAllRows(page, cfg);
+  if (await accountRowVisible(page, email)) {
+    log.info(`[${email}] 列表回读：展开后已出现`);
+    return;
+  }
+
+  const scrollY = await page.evaluate(() => window.scrollY).catch(() => 0);
+  for (let i = 0; i < 40; i++) {
+    await page.mouse.wheel(0, 900);
+    await page.waitForTimeout(200);
+    if (await accountRowVisible(page, email)) {
+      await restoreScroll(page, scrollY);
+      log.info(`[${email}] 列表回读：滚动后已出现`);
+      return;
+    }
+  }
+  await restoreScroll(page, scrollY);
+
+  log.info(`[${email}] 列表回读未命中，刷新后再确认一次 ...`);
+  const refreshed = await clickSandboxTab(page, cfg);
+  if (!refreshed) {
+    await page
+      .reload({ waitUntil: 'domcontentloaded', timeout: cfg.stepTimeoutMs })
+      .catch(() => undefined);
+  }
+  await ensureOnSandboxPage(page, cfg.stepTimeoutMs).catch(() => undefined);
+  await expandAllRows(page, cfg);
+  if (await accountRowVisible(page, email)) {
+    log.info(`[${email}] 列表回读：刷新后已出现`);
+    return;
+  }
+
+  throw new Error(
+    `点击 Create 后弹窗已关闭，但列表中未找到「${email}」，视为创建未成功。请到页面人工核对。`,
+  );
+}
+
+async function accountRowVisible(page: Page, email: string): Promise<boolean> {
+  return (await findAccountRow(page, email).count()) > 0;
 }
 
 /** 抓取弹窗内的报错文案（用于把 Apple 的原始提示带进日志/通知里）。 */
