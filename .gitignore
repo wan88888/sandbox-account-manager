@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+*.log
+logs/
+screenshots/
+
+# 真实账号明细与创建结果（含密码）绝不入库，只保留示例
+data/*.csv
+!data/accounts.example.csv
