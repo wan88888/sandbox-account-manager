@@ -1,9 +1,11 @@
 # sandbox-account-manager
 
-批量创建 App Store Connect 沙盒测试账号（Users and Access › Sandbox › Test Accounts）。
-用 Playwright 通过 CDP 接管 AdsPower 浏览器，复用你已登录的会话，逐个走「点 + → 填 New Tester → Create」流程。
+批量**创建**和**删除** App Store Connect 沙盒测试账号（Users and Access › Sandbox › Test Accounts）。
+用 Playwright 通过 CDP 接管 AdsPower 浏览器，复用你已登录的会话。
 
 ## 它做什么
+
+### 创建模式（默认）
 
 对每个待创建账号重复以下动作：
 
@@ -13,13 +15,25 @@
 4. 点 **Create**，校验弹窗确实关闭；
 5. 随机停顿几秒，继续下一个。
 
-配套能力：
+### 删除模式（`--delete`）
 
-- **幂等**：开跑前先读一遍页面上已有的账号邮箱，重复的直接跳过，中断后可安全重跑；
-- **回读校验**：每个字段填完都回读一次，React 丢字符时自动重填；国家选完也回读比对；
-- **失败隔离**：单个账号失败会截图、关掉（必要时刷新页面）再继续，不会拖垮后面的账号；
+一次性批量删除，不是逐个删：
+
+1. 展开列表全部行，按邮箱精确匹配勾选目标账号（页面上没有的记为「跳过」）；
+2. 核对工具条上的 **Selected (N)** 与勾选数是否一致；
+3. 点右上角 **Delete Accounts**，在二次确认弹窗里再点一次 **Delete Accounts**；
+4. 回读列表确认这些邮箱确实消失了。
+
+删除模式只用 CSV 里的 `email` 列，密码和姓名都不需要填。
+
+### 两个模式共有
+
+- **幂等**：创建前先读一遍页面已有邮箱，重复的跳过；删除时页面上找不到的也记跳过，中断后都可安全重跑；
+- **回读校验**：创建时每个字段填完回读一次，React 丢字符时自动重填；删除后回读确认行已消失；
+- **总数核对**：跑完点一次 **Sandbox** 标签刷新列表，比对账号总数的净增/净减是否与判定成功数一致，不一致会告警；
+- **失败隔离**：创建时单个账号失败会截图、关弹窗（必要时刷新页面）再继续，不拖垮后面的账号；
 - **结果落盘**：创建成功的账号追加写入 `data/created-accounts.csv`，可直接交给测试同学；
-- **飞书通知**：跑完把「新建 / 跳过 / 失败 + 失败原因分组 + 处理建议」推到群里。
+- **飞书通知**：跑完把「新建 / 删除 / 跳过 / 失败 + 失败原因分组 + 处理建议」推到群里。
 
 ## 快速开始
 
@@ -39,6 +53,29 @@ npm start -- --dry-run --limit 1
 
 ```bash
 npm start
+```
+
+## 批量删除
+
+把要删的邮箱写进 `data/accounts.csv`（只需 `email` 列），先演练一次：
+
+```bash
+npm start -- --delete --dry-run    # 只勾选并核对 Selected (N)，然后点 Cancel 取消勾选
+npm start -- --delete             # 确认无误后真删
+```
+
+删的账号和创建的账号无关，随便填哪些邮箱都行，页面上不存在的会记为「跳过」而不是失败：
+
+```csv
+email
+old_us_1@example.com
+old_us_2@example.com
+```
+
+创建完想立刻删掉这批，可以直接指向落盘清单：
+
+```bash
+npm start -- --delete --csv ./data/created-accounts.csv
 ```
 
 ## 账号从哪来
@@ -80,16 +117,16 @@ npm start -- --count 10 --start 101
 
 ## 命令行选项
 
-| 选项                 | 作用                                               |
-| -------------------- | -------------------------------------------------- |
-| `--dry-run`          | 打开弹窗并填好表，但点 Cancel 不真的创建           |
-| `--limit <N>`        | 本次只处理前 N 个账号                              |
-| `--count <N>`        | 按规则生成 N 个账号（覆盖 `GEN_COUNT`）            |
-| `--start <N>`        | 生成序号从 N 开始（覆盖 `GEN_START_INDEX`）        |
-| `--csv <path>`       | 指定账号明细表（覆盖 `ACCOUNTS_CSV`）              |
-| `--no-skip-existing` | 跳过「读取页面已有账号并去重」的预扫描             |
-| `--use-open-page`    | 不主动导航；当前页不是沙盒页时直接报错而非自动跳转 |
-| `-h`, `--help`       | 查看用法                                           |
+| 选项                 | 作用                                                 |
+| -------------------- | ---------------------------------------------------- |
+| `--delete`           | 删除模式：勾选明细表里的邮箱后点 Delete Accounts     |
+| `--dry-run`          | 演练：创建时填好表点 Cancel；删除时只勾选，不点删除  |
+| `--limit <N>`        | 本次只处理前 N 个账号                                |
+| `--count <N>`        | 按规则生成 N 个账号（覆盖 `GEN_COUNT`）              |
+| `--start <N>`        | 生成序号从 N 开始（覆盖 `GEN_START_INDEX`）          |
+| `--csv <path>`       | 指定账号明细表（覆盖 `ACCOUNTS_CSV`）                |
+| `--no-skip-existing` | 跳过「读取页面已有账号并去重」的预扫描（仅创建模式） |
+| `-h`, `--help`       | 查看用法                                             |
 
 ## 配置
 
@@ -101,7 +138,6 @@ npm start -- --count 10 --start 101
 | `SANDBOX_PASSWORD`                                    | 所有账号共用的密码，**必填**（≥8 位且含大小写与数字） |
 | `SANDBOX_COUNTRY`                                     | 默认 Country or Region，需与页面选项文字完全一致      |
 | `SKIP_EXISTING`                                       | 是否预扫描已有邮箱去重，默认 `true`                   |
-| `MAX_ACCOUNTS_PER_RUN`                                | 频率闸门，单次运行最多创建几个，`0` = 不限            |
 | `BETWEEN_ACCOUNTS_MIN_MS` / `BETWEEN_ACCOUNTS_MAX_MS` | 账号之间的随机停顿区间                                |
 | `OUTPUT_CSV`                                          | 创建成功的账号追加落盘路径，留空则不落盘              |
 | `FEISHU_WEBHOOK_URL`                                  | 飞书群自定义机器人 Webhook，留空则不通知              |
@@ -116,29 +152,31 @@ npm start -- --count 10 --start 101
 
 常见报错与处理：
 
-| 报错                        | 原因与处理                                                               |
-| --------------------------- | ------------------------------------------------------------------------ |
-| 无法确认已在沙盒测试账号页  | App Store Connect 未登录或会话过期，在浏览器里登录后重跑                 |
-| 未能定位标题右侧的「+」按钮 | 加号按钮改版，调 `selectors.addButton`                                   |
-| Create 按钮仍为禁用状态     | 有必填项没填进去，看日志里哪个字段回读失败，调 `selectors.dialog.labels` |
-| `DUPLICATE_EMAIL`           | 邮箱已被占用，换邮箱或调大 `GEN_START_INDEX`                             |
+| 报错                          | 原因与处理                                                                 |
+| ----------------------------- | -------------------------------------------------------------------------- |
+| 无法确认已在沙盒测试账号页    | App Store Connect 未登录或会话过期，在浏览器里登录后重跑                   |
+| 未能定位标题右侧的「+」按钮   | 加号按钮改版，调 `selectors.addButton`                                     |
+| Create 按钮仍为禁用状态       | 有必填项没填进去，看日志里哪个字段回读失败，调 `selectors.dialog.labels`   |
+| `DUPLICATE_EMAIL`             | 邮箱已被占用，换邮箱或调大 `GEN_START_INDEX`                               |
+| 未能定位 Delete Accounts 按钮 | 删除工具条改版，调 `selectors.batchDelete`                                 |
+| 勾选数与 Selected (N) 不一致  | 有行没勾上或勾错了，看截图核对，调 `selectors.batchDelete.selectedPattern` |
 
 ## 代码结构
 
-| 文件                      | 职责                                                   |
-| ------------------------- | ------------------------------------------------------ |
-| `src/main.ts`             | 编排：解析参数 → 接管浏览器 → 逐个创建 → 汇总 + 通知   |
-| `src/accounts.ts`         | 账号来源解析（明细表 / 规则生成）与校验                |
-| `src/steps.ts`            | 页面操作步骤：进页面、读已有账号、开弹窗、填表、Create |
-| `src/selectors.ts`        | 页面元素定位，**改版时只改这里**                       |
-| `src/config.ts`           | `.env` 配置读取                                        |
-| `src/cli.ts`              | 命令行参数                                             |
-| `src/adspower.ts`         | AdsPower 本地 API（启动 / 关闭 / 探活）                |
-| `src/playwright-utils.ts` | CDP 接管、窗口最大化、出错截图、多策略点击             |
-| `src/humanize.ts`         | 拟人化停顿、鼠标移动、逐字符输入                       |
-| `src/output.ts`           | 创建成功的账号落盘 CSV                                 |
-| `src/notify.ts`           | 飞书结果卡片                                           |
-| `src/logger.ts`           | 控制台 + 文件日志                                      |
+| 文件                      | 职责                                                        |
+| ------------------------- | ----------------------------------------------------------- |
+| `src/main.ts`             | 编排：解析参数 → 接管浏览器 → 创建/删除 → 汇总 + 通知       |
+| `src/accounts.ts`         | 账号来源解析（明细表 / 规则生成）与校验                     |
+| `src/steps.ts`            | 页面操作步骤：进页面、读已有账号、填表 Create、批量勾选删除 |
+| `src/selectors.ts`        | 页面元素定位，**改版时只改这里**                            |
+| `src/config.ts`           | `.env` 配置读取                                             |
+| `src/cli.ts`              | 命令行参数                                                  |
+| `src/adspower.ts`         | AdsPower 本地 API（启动 / 关闭 / 探活）                     |
+| `src/playwright-utils.ts` | CDP 接管、窗口最大化、出错截图、多策略点击                  |
+| `src/humanize.ts`         | 拟人化停顿、鼠标移动、逐字符输入                            |
+| `src/output.ts`           | 创建成功的账号落盘 CSV                                      |
+| `src/notify.ts`           | 飞书结果卡片                                                |
+| `src/logger.ts`           | 控制台 + 文件日志                                           |
 
 ## 开发
 

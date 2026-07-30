@@ -1,5 +1,5 @@
 /** 写 CSV 时转义单个字段：含逗号/引号/换行时用双引号包裹并把内部引号翻倍。 */
-export function csvEscape(value: string): string {
+function csvEscape(value: string): string {
   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 

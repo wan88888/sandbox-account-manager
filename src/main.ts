@@ -25,7 +25,6 @@ import type { Page } from 'playwright';
 /** 把命令行选项覆盖到配置上。 */
 function applyCliOverrides(cfg: AppConfig, opts: CliOptions): void {
   cfg.dryRun = opts.dryRun;
-  if (opts.useOpenPage) cfg.useOpenPage = true;
   if (opts.noSkipExisting) cfg.skipExisting = false;
   if (opts.csv !== undefined) cfg.accountsCsvPath = opts.csv;
   if (opts.count !== undefined) cfg.generate.count = opts.count;
@@ -216,24 +215,11 @@ function preferredHost(cfg: AppConfig): string | undefined {
   }
 }
 
-/** 应用频率闸门与 --limit，得到本次真正要处理的账号列表。 */
-function applyLimits(
-  accounts: SandboxAccount[],
-  cfg: AppConfig,
-  opts: CliOptions,
-): SandboxAccount[] {
-  let list = accounts;
-  if (opts.limit > 0 && list.length > opts.limit) {
-    log.warn(`--limit ${opts.limit}：本次只处理前 ${opts.limit} 个账号。`);
-    list = list.slice(0, opts.limit);
-  }
-  if (cfg.maxAccountsPerRun > 0 && list.length > cfg.maxAccountsPerRun) {
-    log.warn(
-      `频率闸门：本次运行最多处理 ${cfg.maxAccountsPerRun} 个账号（MAX_ACCOUNTS_PER_RUN）。`,
-    );
-    list = list.slice(0, cfg.maxAccountsPerRun);
-  }
-  return list;
+/** 应用 --limit，得到本次真正要处理的账号列表。 */
+function applyLimit(accounts: SandboxAccount[], limit: number): SandboxAccount[] {
+  if (limit <= 0 || accounts.length <= limit) return accounts;
+  log.warn(`--limit ${limit}：本次只处理前 ${limit} 个账号。`);
+  return accounts.slice(0, limit);
 }
 
 async function run(): Promise<void> {
@@ -251,7 +237,7 @@ async function run(): Promise<void> {
   const logFile = getLogFile();
   if (logFile) log.info(`运行日志将写入: ${logFile}`);
 
-  const accounts = applyLimits(resolveAccounts(cfg), cfg, opts);
+  const accounts = applyLimit(resolveAccounts(cfg, mode), opts.limit);
 
   if (cfg.dryRun) {
     log.warn(

@@ -2,12 +2,12 @@ import type { Locator, Page } from 'playwright';
 import type { HumanizeConfig } from './config.js';
 
 /** [min, max] 闭区间随机整数。 */
-export function rand(min: number, max: number): number {
+function rand(min: number, max: number): number {
   if (max <= min) return Math.max(0, min);
   return Math.floor(min + Math.random() * (max - min + 1));
 }
 
-export function sleep(ms: number): Promise<void> {
+function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, Math.max(0, ms)));
 }
 

@@ -1,0 +1,9 @@
+{
+  // 只用于 npm run typecheck：把 test/ 也纳入检查（tsconfig.json 的 rootDir 只管 src，用于 build）。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

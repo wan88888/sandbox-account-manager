@@ -4,17 +4,9 @@ import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 
 export default tseslint.config(
-  // 不需要 lint 的路径（构建产物、依赖、运营数据、文档等）。
+  // 不需要 lint 的路径（构建产物、依赖、运行产物）。
   {
-    ignores: [
-      'dist/**',
-      'node_modules/**',
-      'data/**',
-      'screenshots/**',
-      'logs/**',
-      'docs/**',
-      'coverage/**',
-    ],
+    ignores: ['dist/**', 'node_modules/**', 'data/**', 'screenshots/**', 'logs/**', 'coverage/**'],
   },
 
   js.configs.recommended,

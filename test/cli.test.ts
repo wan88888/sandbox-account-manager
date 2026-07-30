@@ -9,7 +9,6 @@ describe('parseCli', () => {
       delete: false,
       limit: 0,
       noSkipExisting: false,
-      useOpenPage: false,
     });
   });
 
@@ -19,13 +18,8 @@ describe('parseCli', () => {
   });
 
   it('解析开关型选项', () => {
-    const opts = parseCli(['--dry-run', '--delete', '--no-skip-existing', '--use-open-page']);
-    expect(opts).toMatchObject({
-      dryRun: true,
-      delete: true,
-      noSkipExisting: true,
-      useOpenPage: true,
-    });
+    const opts = parseCli(['--dry-run', '--delete', '--no-skip-existing']);
+    expect(opts).toMatchObject({ dryRun: true, delete: true, noSkipExisting: true });
   });
 
   it('带值选项缺参数时报错', () => {

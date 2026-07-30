@@ -15,8 +15,6 @@ export interface CliOptions {
   csv?: string;
   /** 不做「已存在则跳过」的预扫描。 */
   noSkipExisting: boolean;
-  /** 不主动导航，直接用当前标签页。 */
-  useOpenPage: boolean;
 }
 
 function readInt(argv: string[], i: number, flag: string): number {
@@ -39,7 +37,6 @@ export function parseCli(argv = process.argv.slice(2)): CliOptions {
     delete: false,
     limit: 0,
     noSkipExisting: false,
-    useOpenPage: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -74,9 +71,6 @@ export function parseCli(argv = process.argv.slice(2)): CliOptions {
       case '--no-skip-existing':
         opts.noSkipExisting = true;
         break;
-      case '--use-open-page':
-        opts.useOpenPage = true;
-        break;
       default:
         throw new Error(`未识别的命令行参数: ${arg}（用 --help 查看用法）`);
     }
@@ -100,13 +94,12 @@ export function printHelp(): void {
   --start <N>            生成序号从 N 开始（覆盖 .env 的 GEN_START_INDEX）
   --csv <path>           指定账号明细 CSV（覆盖 .env 的 ACCOUNTS_CSV）
   --no-skip-existing     跳过「读取页面已有账号并去重」的预扫描（仅创建模式）
-  --use-open-page        不主动导航，直接使用当前已打开的标签页
   -h, --help             显示本帮助
 
 示例:
   npm start -- --dry-run --limit 1          # 先拿 1 个账号演练创建
   npm start -- --csv ./data/accounts.csv    # 用明细表创建
   npm start -- --delete --dry-run           # 演练删除（只勾选，不真删）
-  npm start -- --delete                    # 删除 accounts.csv 里列出的账号
+  npm start -- --delete                     # 删除 accounts.csv 里列出的账号
 `);
 }

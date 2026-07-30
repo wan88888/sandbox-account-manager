@@ -3,6 +3,5 @@ node_modules/
 coverage/
 screenshots/
 logs/
-docs/
 data/
 package-lock.json

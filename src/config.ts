@@ -83,10 +83,6 @@ export interface AppConfig {
    * 关掉后重复邮箱会由 Apple 侧报错拦下，只是会多一次无效交互。
    */
   skipExisting: boolean;
-  /** 即使当前标签页看起来不是沙盒页也不主动导航（你确定页面已就绪时用）。 */
-  useOpenPage: boolean;
-  /** 单次运行最多创建多少个账号。0 表示不限制。频率闸门。 */
-  maxAccountsPerRun: number;
   /** 拟人化行为配置。 */
   humanize: HumanizeConfig;
   /** 飞书（Lark）运行结果通知配置。webhookUrl 留空则不通知。 */
@@ -127,8 +123,6 @@ export function loadConfig(): AppConfig {
     closeBrowserOnExit: envBool('CLOSE_BROWSER_ON_EXIT', false),
     dryRun: false,
     skipExisting: envBool('SKIP_EXISTING', true),
-    useOpenPage: envBool('USE_OPEN_PAGE', false),
-    maxAccountsPerRun: envInt('MAX_ACCOUNTS_PER_RUN', 0),
     humanize: {
       enabled: envBool('HUMANIZE', true),
       thinkMinMs: envInt('THINK_MIN_MS', 600),

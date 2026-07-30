@@ -24,8 +24,7 @@ const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 
 /**
  * 步骤 1：确保当前页面是沙盒测试账号列表页。
- * 默认策略是「能不导航就不导航」——你手动开好的页面直接复用，只在当前页明显不对时才 goto。
- * cfg.useOpenPage=true 则连兜底导航也不做。
+ * 「能不导航就不导航」——你手动开好的页面直接复用（保留筛选状态），只在当前页明显不对时才 goto。
  */
 export async function navigateToSandbox(page: Page, cfg: AppConfig): Promise<void> {
   const t = cfg.stepTimeoutMs;
@@ -33,13 +32,6 @@ export async function navigateToSandbox(page: Page, cfg: AppConfig): Promise<voi
   if (await isOnSandboxPage(page)) {
     log.ok('当前标签页已在沙盒测试账号列表页，直接复用。');
     return;
-  }
-
-  if (cfg.useOpenPage) {
-    throw new Error(
-      `--use-open-page：当前标签页不是沙盒测试账号页（${page.url()}）。` +
-        `请手动打开 ${cfg.sandboxUrl} 后重跑，或去掉 --use-open-page 让工具自动导航。`,
-    );
   }
 
   log.step(`导航到沙盒测试账号页: ${cfg.sandboxUrl}`);

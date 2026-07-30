@@ -167,4 +167,31 @@ describe('validateAccounts', () => {
   it('邮箱格式非法时报错', () => {
     expect(() => validateAccounts([{ ...base, email: 'not-an-email' }])).toThrow(/邮箱格式非法/);
   });
+
+  it('删除模式只校验邮箱：缺密码和姓名也放行', () => {
+    const account = {
+      firstName: '',
+      lastName: '',
+      password: '',
+      country: '',
+      email: 'a@example.com',
+    };
+    expect(() => validateAccounts([account], 'delete')).not.toThrow();
+    expect(() => validateAccounts([account], 'create')).toThrow(/缺少 First Name/);
+  });
+
+  it('删除模式仍拦下非法邮箱与批次内重复', () => {
+    expect(() => validateAccounts([{ ...base, email: 'not-an-email' }], 'delete')).toThrow(
+      /邮箱格式非法/,
+    );
+    expect(() =>
+      validateAccounts(
+        [
+          { ...base, email: 'a@example.com' },
+          { ...base, email: 'A@example.com' },
+        ],
+        'delete',
+      ),
+    ).toThrow(/邮箱在本批次内重复/);
+  });
 });

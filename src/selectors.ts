@@ -10,8 +10,6 @@ export const selectors = {
   page: {
     /** 标题栏里的 Sandbox 标签（People / Sandbox / Xcode Cloud）。点它比重载整页更快地刷新列表数据。 */
     sandboxTabText: 'Sandbox',
-    /** 列表标题（实际渲染为「Test Accounts (23)」）。 */
-    headingText: 'Test Accounts',
     /** 用于确认已进入正确页面的候选文案（任一命中即认为已就绪）。 */
     readyTexts: ['Test Accounts', 'sandbox test accounts'],
     /** 从标题里抽出账号总数，用于创建前后对比校验。 */
@@ -71,10 +69,8 @@ export const selectors = {
     deleteButtonTexts: ['Delete Accounts', 'Delete Account'],
     /** 勾选后出现的「取消勾选」按钮，dry-run 时点它收尾。 */
     cancelSelectionText: 'Cancel',
-    /** 二次确认弹窗里的确认按钮文案候选。 */
+    /** 二次确认弹窗里的确认按钮文案候选（「Delete 2 Accounts?」弹窗里的红色按钮）。 */
     confirmButtonTexts: ['Delete Accounts', 'Delete Account', 'Delete'],
-    /** 确认弹窗取消按钮。 */
-    confirmCancelText: 'Cancel',
   },
 
   /** 失败原因识别。 */

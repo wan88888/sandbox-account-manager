@@ -119,24 +119,33 @@ export function generateAccounts(cfg: AppConfig): SandboxAccount[] {
   return accounts;
 }
 
-/** 逐个账号做必填项与密码规则校验，并排除同一批次内的重复邮箱。 */
-export function validateAccounts(accounts: SandboxAccount[]): void {
+/**
+ * 逐个账号做必填项校验，并排除同一批次内的重复邮箱。
+ * 删除模式只认邮箱——姓名、国家、密码都不会填进页面，没必要拦下来。
+ */
+export function validateAccounts(
+  accounts: SandboxAccount[],
+  mode: 'create' | 'delete' = 'create',
+): void {
   const seen = new Set<string>();
   for (const [i, a] of accounts.entries()) {
     const at = `第 ${i + 1} 个账号（${a.email || '邮箱为空'}）`;
     if (!a.email) throw new Error(`${at} 缺少邮箱。`);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email)) throw new Error(`${at} 邮箱格式非法。`);
-    if (!a.firstName || !a.lastName) throw new Error(`${at} 缺少 First Name 或 Last Name。`);
-    if (!a.country) throw new Error(`${at} 缺少 Country or Region。`);
 
-    if (!a.password) {
-      throw new Error(
-        `${at} 缺少密码。请在 .env 里设置 SANDBOX_PASSWORD，或在 CSV 的 password 列填写。`,
-      );
-    }
-    const issues = validatePassword(a.password);
-    if (issues.length > 0) {
-      throw new Error(`${at} 密码不满足 Apple 要求（${issues.join('、')}）。`);
+    if (mode === 'create') {
+      if (!a.firstName || !a.lastName) throw new Error(`${at} 缺少 First Name 或 Last Name。`);
+      if (!a.country) throw new Error(`${at} 缺少 Country or Region。`);
+
+      if (!a.password) {
+        throw new Error(
+          `${at} 缺少密码。请在 .env 里设置 SANDBOX_PASSWORD，或在 CSV 的 password 列填写。`,
+        );
+      }
+      const issues = validatePassword(a.password);
+      if (issues.length > 0) {
+        throw new Error(`${at} 密码不满足 Apple 要求（${issues.join('、')}）。`);
+      }
     }
 
     const key = a.email.toLowerCase();
@@ -146,11 +155,14 @@ export function validateAccounts(accounts: SandboxAccount[]): void {
 }
 
 /**
- * 解析本次要创建的账号列表，按优先级：
+ * 解析本次要处理的账号列表，按优先级：
  *  1. 账号明细 CSV（ACCOUNTS_CSV，文件存在时优先，可精确控制每个账号的姓名/国家）；
  *  2. 按规则批量生成（GEN_EMAIL_PATTERN + GEN_COUNT，最省事）。
  */
-export function resolveAccounts(cfg: AppConfig): SandboxAccount[] {
+export function resolveAccounts(
+  cfg: AppConfig,
+  mode: 'create' | 'delete' = 'create',
+): SandboxAccount[] {
   const csvAbs = resolve(process.cwd(), cfg.accountsCsvPath);
   let accounts: SandboxAccount[];
 
@@ -169,6 +181,6 @@ export function resolveAccounts(cfg: AppConfig): SandboxAccount[] {
     );
   }
 
-  validateAccounts(accounts);
+  validateAccounts(accounts, mode);
   return accounts;
 }
